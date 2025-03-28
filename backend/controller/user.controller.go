@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"time"
 
@@ -50,9 +51,16 @@ func (uc *UserController) GetUsers(c *gin.Context) {
 
 	cachedUsers, err := uc.cacheDB.Get(ctx, cacheKey).Result()
 	if err == nil {
+		var users []model.User
+		if err := json.Unmarshal([]byte(cachedUsers), &users); err != nil {
+			log.Println("Error unmarshaling cached users:", err)
+			c.JSON(500, gin.H{"error": "Error unmarshaling cached users"})
+			return
+		}
+
 		c.JSON(200, gin.H{
 			"source": "cache",
-			"users":  cachedUsers,
+			"users":  users,
 		})
 		return
 	}
@@ -63,7 +71,14 @@ func (uc *UserController) GetUsers(c *gin.Context) {
 		return
 	}
 
-	err = uc.cacheDB.Set(ctx, cacheKey, users, 10*time.Second).Err()
+	cachedData, err := json.Marshal(users)
+	if err != nil {
+		log.Println("Error marshaling users:", err)
+		c.JSON(500, gin.H{"error": "Error serializing users"})
+		return
+	}
+
+	err = uc.cacheDB.Set(ctx, cacheKey, cachedData, 10*time.Second).Err()
 	if err != nil {
 		log.Println("Error caching users:", err)
 	}
