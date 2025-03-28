@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  load_balancer:
+    build: ./load_balancer
+    ports:
+      - "8020:8020"
+    depends_on:
+      - backend1
+      - backend2
+    networks:
+      - from_0_to_1_million_network
+
+  backend1:
+    build: ./backend
+    environment:
+      - BACKEND_PORT=8021
+    command: ["/main"]
+    expose:
+      - "8021"
+    networks:
+      - from_0_to_1_million_network
+    depends_on:
+      - mysql_slave
+      - mysql_master
+  backend2:
+    build: ./backend
+    environment:
+      - BACKEND_PORT=8022
+    command: ["/main"]
+    expose:
+      - "8022"
+    networks:
+      - from_0_to_1_million_network
+    depends_on:
+      - mysql_slave
+      - mysql_master
+  mysql_master:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: example_db
+      MYSQL_USER: example_user
+      MYSQL_PASSWORD: example_pass
+      MYSQL_ROOT_HOST: "%"
+    ports:
+      - "3308:3306"
+    # volumes:
+    #   - ./.db_data_master:/var/lib/mysql
+    networks:
+      - from_0_to_1_million_network
+    command: >
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-do-db=example_db
+      --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5
+  mysql_slave:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: example_db
+      MYSQL_USER: example_user
+      MYSQL_PASSWORD: example_pass
+    ports:
+      - "3307:3306"
+    # volumes:
+    #   - ./.db_data_slave:/var/lib/mysql
+    networks:
+      - from_0_to_1_million_network
+    depends_on:
+      - mysql_master
+    command: --server-id=2 --log-bin=mysql-bin --read-only=1 --relay-log=mysql-relay-bin
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - from_0_to_1_million_network
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+
+networks:
+  from_0_to_1_million_network:
+    driver: bridge
