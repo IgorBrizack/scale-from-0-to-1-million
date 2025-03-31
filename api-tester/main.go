@@ -17,6 +17,11 @@ type User struct {
 	SecondName string `json:"second_name"`
 }
 
+type ResponseData struct {
+	Source string `json:"source"`
+	Users  []User `json:"users"`
+}
+
 func generateRandomName(r *rand.Rand) string {
 	names := []string{"John", "Alice", "Bob", "Charlie", "Eve"}
 	return names[r.Intn(len(names))]
@@ -51,19 +56,6 @@ func createUser(url string, r *rand.Rand) {
 	log.Printf("Usuário criado: %s | Status: %s\n", user.Name, resp.Status)
 }
 
-func getUsers(url string) {
-	defer wg.Done()
-
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Printf("Erro ao fazer requisição GET: %v\n", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	log.Printf("Requisição GET concluída | Status: %s\n", resp.Status)
-}
-
 func main() {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
@@ -71,16 +63,11 @@ func main() {
 
 	users := make([]int, 5000)
 
-	for i := range users {
+	for range users {
 		time.Sleep(time.Millisecond * 20)
 		wg.Add(1)
 		go createUser(url, r)
-
-		if i%10 == 0 {
-			wg.Add(1)
-			go getUsers(url)
-		}
 	}
-
 	wg.Wait()
+
 }
