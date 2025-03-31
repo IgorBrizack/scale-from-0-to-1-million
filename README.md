@@ -179,3 +179,7 @@ Caso possua o golang instalado em sua máquina realize o seguinte comando no dir
 - `go mod tidy`
 
 - `go run main.go` (executando o script)
+
+## Considerações finais
+
+Caso tenha chegado até aqui e tenha gostado do conteúdo não esqueça de deixar a sua 🌟 aqui nesse repositório, e de compartilhar com seus colegas.
