@@ -1,62 +1,4 @@
-https://airbyte.com/data-engineering-resources/master-slave-replication
-
-Ao conectar no banco de dados Master, executar procedimento de criação do usuário de replicação
-
-`CREATE USER 'replication'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
-GRANT REPLICATION SLAVE ON *.* TO 'replication'@'%';
-FLUSH PRIVILEGES;`
-
-A seguir deverá obter as informações de onde estão armazenados os dados do banco de dados master para apontar no Slave
-
-SHOW MASTER STATUS;
-
-![alt text](imgs/master_status.png)
-
-Agora no banco de dados Slave para que a replicação ocorra deve seguir os seguintes passos
-
-execute a query alterando o log file e o position com as informações do master
-
-`CHANGE REPLICATION SOURCE TO
-    SOURCE_HOST = 'mysql_master',
-    SOURCE_USER = 'replication',
-    SOURCE_PASSWORD = 'password',
-    SOURCE_LOG_FILE = 'mysql-bin.000003',
-    SOURCE_LOG_POS = 2503;
-START REPLICA;
-`
-
-Verifique o status do Slave aparece conforme a imagem abaixo
-
-SHOW SLAVE STATUS;
-
-![alt text](imgs/slave_status.png)
-
-Caso esteja tudo ok com a conexão entre os banco, agora crie a seguinte tabela no banco de dados master
-
-`CREATE TABLE users_data (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    second_name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-`
-
-A tabela criada acima deverá aparecer também no banco de dados slave já que a replicação foi configurada.
-
-No banco de dados slave execute a seguinte query, isso garantirá que nenhum usuário exceto o root possa fazer inserts no banco de dados.
-
-SET GLOBAL read_only = 1;
-
-observando os logs das APIS
-![alt text](imgs/api_log.png)
-
-criando usuários
-
-chmod +x create_users.sh
-chmod +x ping_users.sh
-
-# scale-from-0-to-1-million
+# Scale From 0 To 1 Million
 
 Nesse repositório você encontrará como implementar em ambiente local partes de um sistema que tem como finalidade escalar do 0 ao 1 milhão de usuários e entenderá o funcionamento de algumas dessas partes. O conhecimento obtido nesse repositório tem como origem o livro System Design Interview - An insider's guide. O tema sugerido encontra-se no primeiro capítulo do livro, e nele há muito mais detalhes e conhecimentos que podem ser adquiridos.
 
@@ -109,3 +51,83 @@ Um banco de dados de cache é um sistema otimizado para armazenar e recuperar da
 - Expiração Automática – Pode remover dados automaticamente após um período (TTL - Time To Live).
 - Uso de Chave-Valor – Normalmente adota um formato simples como {chave: valor}.
   -Persistência Opcional – Alguns suportam salvar dados em disco para evitar perda.
+
+## Iniciando o projeto
+
+📌 Configurando o Backend:
+
+- Na pasta do backend crie um arquivo .env com as credenciais semelhantes ao do arquivo .env.example.
+
+📌 Construindo a imagem dos nossos serviços.
+
+- `docker-compose up -d --build`
+
+📌 Verificando se os serviços estão rodando.
+
+- `docker ps`
+
+📌 Configurando o banco de dados Master e o Slave. **Essa etapa ela pode ser realizada pelo cli do mysql acessando o containter dos respectivos banco de dados, porém via programas como DBeaver acredito que será mais fácil.**
+
+- Para se conectar ao banco de dados **MASTER** acesse a porta 3308 do seu localhost e para o **SLAVE** a porta 3307, as credenciais encontra-sem no docker-compose.
+
+Ao conectar ao banco de dados **MASTER** execute a seguinte query:
+
+```sql
+CREATE USER 'replication'@'%' IDENTIFIED
+WITH mysql_native_password
+BY 'password';
+GRANT REPLICATION SLAVE
+ON *.*
+TO 'replication'@'%'; FLUSH PRIVILEGES;
+```
+
+Para obter o endereçamento de onde estão salvos os dados do banco master utilize a seguinte query:
+
+```sql
+  SHOW MASTER STATUS;
+```
+
+A seguinte imagem irá aparecer, guarde as informações do **FILE** e do **POSITION**:
+
+![master-status](imgs/master_status.png)
+
+Crie a seguinte tabela:
+
+```sql
+    CREATE TABLE users_data (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    second_name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+```
+
+📌 Configurando o banco de dados **SLAVE**:
+
+Execute a seguinte Query e preencha com os dados do **FILE** e do **POSITION** do banco de dados master.
+
+```sql
+CHANGE REPLICATION SOURCE
+TO SOURCE_HOST = 'mysql_master',
+	SOURCE_USER = 'replication',
+ 	SOURCE_PASSWORD = 'password',
+	SOURCE_LOG_FILE = 'mysql-bin.000003',
+	SOURCE_LOG_POS = 3016;
+START REPLICA
+```
+
+Verifique se a conexão deu certo executando a seguinte query e observando se as as informações condizem com o da imagem abaixo:
+
+```sql
+SHOW SLAVE STATUS;
+```
+
+![slave-status](imgs/slave_status.png)
+
+📌 Para garantir que nenhum usuário além do root possa fazer alterações no **SLAVE** utilize a seguinte query, dessa forma os demais usuários só poderão fazer leituras nele:
+
+```sqsl
+SET GLOBAL read_only = 1;
+```
+
+📌 A partir desse ponto a replicação do banco de dados **MASTER** já deve estar presente no banco de dados **SLAVE**, caso não esteja reveja se não houve nenhuma falha em algum ponto do processo.
