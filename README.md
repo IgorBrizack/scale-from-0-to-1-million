@@ -131,3 +131,51 @@ SET GLOBAL read_only = 1;
 ```
 
 📌 A partir desse ponto a replicação do banco de dados **MASTER** já deve estar presente no banco de dados **SLAVE**, caso não esteja reveja se não houve nenhuma falha em algum ponto do processo.
+
+## 🎯 Realizando testes na nossa aplicação
+
+Iremos realizar chamadas HTTP ao nosso load balancer e ele se encarregará de fazer o proxy reverso com as nossas API's e irá distribuir as chamadas de forma equivalente.
+
+URL Load Balancer: http://localhost:8020
+
+Rotas:
+
+- POST (/users)
+
+```json
+Body da requisição
+{
+  "name": "teste",
+  "second_name": "sobrenome"
+}
+```
+
+- GET (/users)
+- Caso realize mais de uma chamada observará que o source muda, alternando entre Cache e Database, observe também que o tempo de resposta quando o source for Cache diminui consideravelmente em relação a obtenção direta do Database.
+
+```json
+Response da requisição
+{
+	"source": "database",
+	"users": [
+		{
+			"id": 1,
+			"name": "teste",
+			"second_name": "sobrenome",
+			"created_at": "2025-03-29T16:34:19Z",
+			"updated_at": "2025-03-29T16:34:19Z"
+		}]
+}
+```
+
+## Criando 5000 mil usuários e observando os Logs das API's
+
+- Para ficar mais fácil de observar as inserções e o funcionamento do load balancer alternando as chamadas a API abra os logs do backend1 e backend2.
+
+![api-logs](imgs/api_log.png)
+
+Caso possua o golang instalado em sua máquina realize o seguinte comando no diretório do api-tester.
+
+- `go mod tidy`
+
+- `go run main.go` (executando o script)
