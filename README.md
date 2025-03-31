@@ -1,58 +1,185 @@
-https://airbyte.com/data-engineering-resources/master-slave-replication
+# Scale From 0 To 1 Million
 
-Ao conectar no banco de dados Master, executar procedimento de criação do usuário de replicação
+Nesse repositório você encontrará como implementar em ambiente local partes de um sistema que tem como finalidade escalar do 0 ao 1 milhão de usuários e entenderá o funcionamento de algumas dessas partes. O conhecimento obtido nesse repositório tem como origem o livro System Design Interview - An insider's guide. O tema sugerido encontra-se no primeiro capítulo do livro, e nele há muito mais detalhes e conhecimentos que podem ser adquiridos.
 
-`CREATE USER 'replication'@'%' IDENTIFIED WITH mysql_native_password BY 'password';
-GRANT REPLICATION SLAVE ON *.* TO 'replication'@'%';
-FLUSH PRIVILEGES;`
+# Design
 
-A seguir deverá obter as informações de onde estão armazenados os dados do banco de dados master para apontar no Slave
+**Para esse escopo iremos descartar a aplicação WEB e iremos dar foco somente a partir do Load Balancer**
 
-SHOW MASTER STATUS;
+<img src="imgs/design.png" alt="Design" style="width:350px; height:400px">
 
-![alt text](imgs/master_status.png)
+## O que é um Load Balancer?
 
-Agora no banco de dados Slave para que a replicação ocorra deve seguir os seguintes passos
+Um Load Balancer (Balanceador de Carga) é um sistema que distribui dinamicamente o tráfego de rede entre vários servidores para otimizar desempenho, garantir alta disponibilidade e evitar sobrecarga.
 
-execute a query alterando o log file e o position com as informações do master
+Ele atua como um intermediário entre os clientes e os servidores backend, decidindo qual servidor deve processar cada requisição com base em diferentes estratégias.
 
-`CHANGE REPLICATION SOURCE TO
-    SOURCE_HOST = 'mysql_master',
-    SOURCE_USER = 'replication',
-    SOURCE_PASSWORD = 'password',
-    SOURCE_LOG_FILE = 'mysql-bin.000003',
-    SOURCE_LOG_POS = 2503;
-START REPLICA;
-`
+- Reparte as requisições entre múltiplos servidores, evitando sobrecarga em um único recurso.
+- Se um servidor falhar, o tráfego é redirecionado para os servidores saudáveis, garantindo que o sistema continue funcionando.
+- Permite adicionar ou remover servidores dinamicamente conforme a demanda aumenta ou diminui.
+- Reduz o tempo de resposta ao balancear cargas e evitar gargalos.
+- Pode atuar como um proxy reverso, protegendo servidores backend de ataques diretos e mitigando ameaças como DDoS.
 
-Verifique o status do Slave aparece conforme a imagem abaixo
+## O que é um API Server ?
 
-SHOW SLAVE STATUS;
+Um API Server (Servidor de API) é um servidor responsável por processar requisições de APIs, geralmente seguindo os padrões RESTful ou GraphQL, e responder com os dados solicitados. Ele age como intermediário entre o frontend (clientes, apps, navegadores) e o backend (banco de dados, serviços, lógica de negócios).
 
-![alt text](imgs/slave_status.png)
+- Gerenciar Requisições HTTP: Recebe requisições de clientes e retorna respostas.
+- Executar Lógica de Negócio: Processa os dados antes de enviar ao cliente.
+- Interagir com Bancos de Dados: Faz consultas, inserções e atualizações.
+- Aplicar Autenticação e Segurança: Usa tokens JWT, OAuth ou API Keys.
+- Gerenciar Taxas de Requisição (Rate Limiting): Evita sobrecarga no sistema.
 
-Caso esteja tudo ok com a conexão entre os banco, agora crie a seguinte tabela no banco de dados master
+## O que é um banco de dados?
 
-`CREATE TABLE users_data (
+Um banco de dados (Database) é um sistema organizado para armazenar, gerenciar e recuperar informações de forma eficiente. Ele permite que aplicativos e usuários consultem, modifiquem e armazenem dados de maneira estruturada.
+
+## O que é a estrutura Master-Slave em Banco de Dados?
+
+A arquitetura Master-Slave (também chamada de Primary-Replica) é um modelo de replicação de banco de dados onde um servidor principal (Master) recebe todas as operações de escrita e atualização, enquanto um ou mais servidores secundários (Slaves) replicam esses dados e lidam principalmente com operações de leitura.
+
+- O banco de dados Master recebe todas as operações de escrita (INSERT, UPDATE, DELETE).
+- Os bancos Slave recebem uma cópia dos dados do Master através da replicação e processam operações de leitura (SELECT).
+- As mudanças feitas no Master são enviadas periodicamente para os Slaves, garantindo que os dados estejam sincronizados.
+
+## O que é um Banco de Dados de Cache?
+
+Um banco de dados de cache é um sistema otimizado para armazenar e recuperar dados rapidamente, reduzindo a carga sobre bancos de dados tradicionais e acelerando o tempo de resposta de aplicações. Ele mantém dados temporários na memória RAM, permitindo acessos ultrarrápidos.
+
+- Alto Desempenho – Consultas são até 100x mais rápidas do que em bancos tradicionais.
+- Armazenamento em Memória – Os dados ficam em RAM, garantindo baixa latência.
+- Expiração Automática – Pode remover dados automaticamente após um período (TTL - Time To Live).
+- Uso de Chave-Valor – Normalmente adota um formato simples como {chave: valor}.
+  -Persistência Opcional – Alguns suportam salvar dados em disco para evitar perda.
+
+## Iniciando o projeto
+
+📌 Configurando o Backend:
+
+- Na pasta do backend crie um arquivo .env com as credenciais semelhantes ao do arquivo .env.example.
+
+📌 Construindo a imagem dos nossos serviços.
+
+- `docker-compose up -d --build`
+
+📌 Verificando se os serviços estão rodando.
+
+- `docker ps`
+
+📌 Configurando o banco de dados Master e o Slave. **Essa etapa ela pode ser realizada pelo cli do mysql acessando o containter dos respectivos banco de dados, porém via programas como DBeaver acredito que será mais fácil.**
+
+- Para se conectar ao banco de dados **MASTER** acesse a porta 3308 do seu localhost e para o **SLAVE** a porta 3307, as credenciais encontra-sem no docker-compose.
+
+Ao conectar ao banco de dados **MASTER** execute a seguinte query:
+
+```sql
+CREATE USER 'replication'@'%' IDENTIFIED
+WITH mysql_native_password
+BY 'password';
+GRANT REPLICATION SLAVE
+ON *.*
+TO 'replication'@'%'; FLUSH PRIVILEGES;
+```
+
+Para obter o endereçamento de onde estão salvos os dados do banco master utilize a seguinte query:
+
+```sql
+  SHOW MASTER STATUS;
+```
+
+A seguinte imagem irá aparecer, guarde as informações do **FILE** e do **POSITION**:
+
+![master-status](imgs/master_status.png)
+
+Crie a seguinte tabela:
+
+```sql
+    CREATE TABLE users_data (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     second_name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-`
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+```
 
-A tabela criada acima deverá aparecer também no banco de dados slave já que a replicação foi configurada.
+📌 Configurando o banco de dados **SLAVE**:
 
-No banco de dados slave execute a seguinte query, isso garantirá que nenhum usuário exceto o root possa fazer inserts no banco de dados.
+Execute a seguinte Query e preencha com os dados do **FILE** e do **POSITION** do banco de dados master.
 
+```sql
+CHANGE REPLICATION SOURCE
+TO SOURCE_HOST = 'mysql_master',
+	SOURCE_USER = 'replication',
+ 	SOURCE_PASSWORD = 'password',
+	SOURCE_LOG_FILE = 'mysql-bin.000003',
+	SOURCE_LOG_POS = 3016;
+START REPLICA
+```
+
+Verifique se a conexão deu certo executando a seguinte query e observando se as as informações condizem com o da imagem abaixo:
+
+```sql
+SHOW SLAVE STATUS;
+```
+
+![slave-status](imgs/slave_status.png)
+
+📌 Para garantir que nenhum usuário além do root possa fazer alterações no **SLAVE** utilize a seguinte query, dessa forma os demais usuários só poderão fazer leituras nele:
+
+```sqsl
 SET GLOBAL read_only = 1;
+```
 
-observando os logs das APIS
-![alt text](imgs/api_log.png)
+📌 A partir desse ponto a replicação do banco de dados **MASTER** já deve estar presente no banco de dados **SLAVE**, caso não esteja reveja se não houve nenhuma falha em algum ponto do processo.
 
-criando usuários
+## 🎯 Realizando testes na nossa aplicação
 
-chmod +x create_users.sh
-chmod +x ping_users.sh
-# scale-from-0-to-1-million
+Iremos realizar chamadas HTTP ao nosso load balancer e ele se encarregará de fazer o proxy reverso com as nossas API's e irá distribuir as chamadas de forma equivalente.
+
+URL Load Balancer: http://localhost:8020
+
+Rotas:
+
+- POST (/users)
+
+```json
+Body da requisição
+{
+  "name": "teste",
+  "second_name": "sobrenome"
+}
+```
+
+- GET (/users)
+- Caso realize mais de uma chamada observará que o source muda, alternando entre Cache e Database, observe também que o tempo de resposta quando o source for Cache diminui consideravelmente em relação a obtenção direta do Database.
+
+```json
+Response da requisição
+{
+	"source": "database",
+	"users": [
+		{
+			"id": 1,
+			"name": "teste",
+			"second_name": "sobrenome",
+			"created_at": "2025-03-29T16:34:19Z",
+			"updated_at": "2025-03-29T16:34:19Z"
+		}]
+}
+```
+
+## Criando 5000 mil usuários e observando os Logs das API's
+
+- Para ficar mais fácil de observar as inserções e o funcionamento do load balancer alternando as chamadas a API abra os logs do backend1 e backend2.
+
+![api-logs](imgs/api_log.png)
+
+Caso possua o golang instalado em sua máquina realize o seguinte comando no diretório do api-tester.
+
+- `go mod tidy`
+
+- `go run main.go` (executando o script)
+
+## Considerações finais
+
+Caso tenha chegado até aqui e tenha gostado do conteúdo não esqueça de deixar a sua 🌟 aqui nesse repositório, e de compartilhar com seus colegas.
