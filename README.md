@@ -4,7 +4,7 @@ Nesse repositório você encontrará como implementar em ambiente local partes d
 
 # Design
 
-**Para esse escopo iremos descartar a aplicação WEB e iremos dar foco somente a partir do Load Balancer**
+**Para esse escopo iremos dar foco somente a partir do Load Balancer**
 
 <img src="imgs/design.png" alt="Design" style="width:350px; height:400px">
 
